@@ -1,2 +1,0 @@
-[console_scripts]
-bank-recon = bank_recon.cli:main
