@@ -1,0 +1,196 @@
+name: International Multi-Currency Bank
+id: multi_currency_bank
+version: 1.0.0
+description: Schema configuration for complex international bank with multi-currency support and nested statement structure
+
+source:
+  supported_formats:
+    - csv
+    - excel
+    - json
+  encoding: utf-8
+  csv_options:
+    delimiter: ','
+    header_row: 3
+    skip_rows: [0, 1, 2, 7, 8]  # Skip header info and footer rows
+    comment: '#'
+  excel_options:
+    header_row: 3
+    sheet_index: 0
+    skip_rows: [0, 1, 2, 7, 8]
+  json_options:
+    root_path: "$.statements[*].transactions[*]"  # JSON path to transactions in nested structure
+  detection_rules:
+    column_patterns:
+      - Transaction Date
+      - Value Date
+      - Description
+      - Amount in Original Currency
+      - Original Currency
+      - Exchange Rate
+      - Amount in Base Currency
+      - Account Balance
+      - Category
+      - Sub-Category
+      - Reference Number
+
+field_mappings:
+  transaction_date:
+    source: Transaction Date
+    type: date
+    required: true
+    format: '%Y-%m-%dT%H:%M:%S'  # ISO format with time
+  value_date:
+    source: Value Date
+    type: date
+    required: true
+    format: '%Y-%m-%d'
+  description:
+    source: Description
+    type: string
+    required: true
+    transform: clean_description
+  original_amount:
+    source: Amount in Original Currency
+    type: decimal
+    required: true
+    transform: clean_amount
+  original_currency:
+    source: Original Currency
+    type: string
+    required: true
+  exchange_rate:
+    source: Exchange Rate
+    type: decimal
+    required: false
+    default: 1.0
+  base_amount:
+    source: Amount in Base Currency
+    type: decimal
+    required: true
+    transform: clean_amount
+  balance:
+    source: Account Balance
+    type: decimal
+    required: true
+    transform: clean_amount
+  transaction_category:
+    source: Category
+    type: string
+    required: false
+  sub_category:
+    source: Sub-Category
+    type: string
+    required: false
+  reference_number:
+    source: Reference Number
+    type: string
+    required: false
+
+derived_fields:
+  transaction_id:
+    transform: "lambda df, idx: f\"INT_{df['reference_number'] if pd.notna(df['reference_number']) else df['transaction_date'].strftime('%Y%m%d')}_{idx}\""
+    type: string
+  debit:
+    transform: "lambda x: abs(float(x)) if float(x) < 0 else 0.0"
+    source: base_amount
+    type: decimal
+  credit:
+    transform: "lambda x: float(x) if float(x) > 0 else 0.0"
+    source: base_amount
+    type: decimal
+  is_foreign_currency:
+    transform: "lambda x: x != 'INR' and x != 'USD'"
+    source: original_currency
+    type: boolean
+  transaction_type:
+    transform: "lambda category, subcategory, desc: category if pd.notna(category) else (subcategory if pd.notna(subcategory) else next((t for t in ['SALARY', 'DIVIDEND', 'INTEREST', 'TRANSFER', 'WITHDRAWAL', 'DEPOSIT', 'PAYMENT', 'FEE', 'TAX'] if t in str(desc).upper()), 'OTHER'))"
+    source: [transaction_category, sub_category, description]
+    type: string
+  currency_conversion_fee:
+    transform: "lambda amt, rate, base: abs(float(base) - (float(amt) * float(rate))) if float(rate) != 1.0 and pd.notna(rate) else 0.0"
+    source: [original_amount, exchange_rate, base_amount]
+    type: decimal
+  transaction_quarter:
+    transform: "lambda x: f\"Q{(pd.to_datetime(x).month - 1) // 3 + 1}-{pd.to_datetime(x).year}\""
+    source: transaction_date
+    type: string
+  weekend_transaction:
+    transform: "lambda x: pd.to_datetime(x).weekday() >= 5"  # 5=Saturday, 6=Sunday
+    source: transaction_date
+    type: boolean
+
+validation_rules:
+  - rule: not_null
+    field: transaction_date
+    error_message: Transaction date cannot be null
+  - rule: not_null
+    field: base_amount
+    error_message: Base amount cannot be null
+  - rule: custom
+    expression: "(df['original_currency'] == 'INR') | ((df['exchange_rate'] > 0) & df['exchange_rate'].notna())"
+    error_message: Exchange rate must be positive and not null for non-INR currencies
+  - rule: custom
+    expression: "abs(df['base_amount'] - df['original_amount'] * df['exchange_rate'].fillna(1.0)) < 2"
+    error_message: Base amount should approximately equal original amount times exchange rate
+  - rule: custom
+    expression: "df['transaction_date'] <= pd.Timestamp('now')"
+    error_message: Transaction date cannot be in the future
+  - rule: custom 
+    expression: "df['value_date'] >= df['transaction_date']"
+    error_message: Value date cannot be before transaction date
+  - rule: custom
+    expression: "~((df['original_currency'] != 'INR') & (df['exchange_rate'].isna()))"
+    error_message: Exchange rate is required for non-INR currencies
+
+preprocessing:
+  - action: replace_text
+    column: Description
+    pattern: "\\s+"
+    replacement: " "
+  - action: convert_case
+    column: Description
+    case: upper
+  - action: replace_text
+    column: Exchange Rate
+    pattern: "-"
+    replacement: ""
+  - action: custom
+    expression: "df['Original Currency'] = df['Original Currency'].str.upper()"
+    description: "Standardize currency codes to uppercase"
+  - action: custom
+    expression: "df['Exchange Rate'] = df['Exchange Rate'].fillna(1.0).astype(float)"
+    description: "Fill missing exchange rates with 1.0"
+  - action: custom
+    expression: "for col in df.select_dtypes(include=['object']).columns: df[col] = df[col].str.strip() if hasattr(df[col], 'str') else df[col]"
+    description: "Strip whitespace from all string columns"
+
+postprocessing:
+  - action: compute_field
+    target: total_fees
+    expression: "df['currency_conversion_fee'].sum()"
+    description: "Calculate total conversion fees"
+  - action: add_summary
+    field: currency_breakdown
+    expression: "df.groupby('original_currency')['original_amount'].agg(['sum', 'count']).to_dict()"
+    description: "Add currency breakdown summary"
+  - action: add_summary
+    field: daily_totals
+    expression: "df.groupby(df['transaction_date'].dt.date)['base_amount'].sum().to_dict()"
+    description: "Add daily transaction totals"
+
+audit:
+  enabled: true
+  track_fields:
+    - transaction_date
+    - value_date
+    - description
+    - original_amount
+    - original_currency
+    - exchange_rate
+    - base_amount
+    - balance
+  track_transformations: true
+  track_validation_failures: true
+  create_snapshots: true
+  include_user_info: true

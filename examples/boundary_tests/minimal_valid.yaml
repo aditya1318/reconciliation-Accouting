@@ -1,0 +1,19 @@
+# Absolute minimal valid schema
+name: Minimal Schema
+id: minimal
+version: 1.0.0
+description: Minimal valid schema with only required fields
+
+source:
+  supported_formats:
+    - csv
+  csv_options:
+    delimiter: ','
+    header_row: 0
+
+field_mappings:
+  date:
+    source: Date
+    type: date
+    required: true
+    format: '%Y-%m-%d'

@@ -1,0 +1,176 @@
+# Tally ERP Internal Records Schema Configuration
+name: "Tally ERP"
+id: "tally_erp"
+version: "1.0.0"
+description: "Schema configuration for Tally ERP internal accounting records"
+
+# Source format details
+source:
+  supported_formats:
+    - excel
+    - csv
+    - xml
+  encoding: "utf-8"
+  excel_options:
+    header_row: 0  # Header is in the first row
+  csv_options:
+    delimiter: ","
+    header_row: 0
+  xml_options:
+    root_element: "ENVELOPE/BODY/DATA/COLLECTION"
+    record_element: "VOUCHER"
+    
+  # Schema detection rules to automatically identify this format
+  detection_rules:
+    # If these columns are present, it's likely Tally ERP format
+    column_patterns:
+      - "Voucher Type"
+      - "Voucher No"
+      - "Voucher Date"
+      - "Particulars"
+      - "Amount"
+
+# Field mappings
+field_mappings:
+  # Transaction identifier
+  transaction_id:
+    source: "Voucher No"
+    type: "string"
+    required: true
+  
+  # Transaction date
+  date:
+    source: "Voucher Date"
+    type: "date"
+    required: true
+    format: "%d-%m-%Y"  # DD-MM-YYYY format
+  
+  # Description or particulars
+  description:
+    source: "Particulars"
+    type: "string"
+    required: true
+    transform: "clean_description"
+  
+  # Transaction amount
+  amount:
+    source: "Amount"
+    type: "decimal"
+    required: true
+    transform: "handle_debit_credit"
+  
+  # Reference number (for bank reconciliation)
+  reference:
+    source: "Reference No"
+    type: "string"
+    required: false
+  
+  # Transaction type
+  type:
+    source: "Voucher Type"
+    type: "string"
+    required: false
+    transform: "normalize_transaction_type"
+  
+  # Party name (vendor/customer)
+  party_name:
+    source: "Party Name"
+    type: "string"
+    required: false
+    transform: "clean_party_name"
+
+# Derived fields
+derived_fields:
+  # Payment category based on transaction type and description
+  payment_category:
+    transform: "categorize_payment"
+    source: ["type", "description"]
+    type: "string"
+  
+  # Flag for reconciled transactions
+  is_reconciled:
+    source: "Reconciled"
+    type: "boolean"
+    default: false
+  
+  # GST details
+  gst_amount:
+    transform: "extract_gst_amount"
+    source: ["description", "amount"]
+    type: "decimal"
+  
+  # TDS details
+  tds_amount:
+    transform: "extract_tds_amount"
+    source: ["description", "amount"]
+    type: "decimal"
+
+# Computed fields based on expressions
+computed_fields:
+  # Net amount excluding taxes
+  net_amount:
+    expression: "amount - gst_amount - tds_amount"
+    type: "decimal"
+  
+  # Transaction quarter for reporting
+  fiscal_quarter:
+    expression: "get_fiscal_quarter(date)"
+    type: "string"
+
+# Data validation rules
+validation_rules:
+  # Ensure all transactions have an amount
+  - rule: "not_null"
+    field: "amount"
+    error_message: "Transaction amount cannot be null"
+  
+  # Validate transaction date is within acceptable range
+  - rule: "date_range"
+    field: "date"
+    min_date: "01-01-2020"
+    max_date: "today+30"  # Allow dates up to 30 days in the future
+    error_message: "Transaction date is outside the acceptable range"
+  
+  # Ensure transaction_id is unique
+  - rule: "unique"
+    field: "transaction_id"
+    error_message: "Transaction ID must be unique"
+
+# Custom transformations specific to Tally ERP
+transformations:
+  handle_debit_credit:
+    description: "Handle debit/credit amounts based on transaction type"
+    script: |
+      def transform(value, row):
+          # For certain voucher types, make the amount negative
+          if row.get('Voucher Type') in ['Payment', 'Contra', 'Journal']:
+              debit_types = ['Payment', 'Debit Note']
+              if row.get('Voucher Type') in debit_types:
+                  return -abs(float(value))
+          return float(value)
+  
+  normalize_transaction_type:
+    description: "Normalize transaction types to standard values"
+    script: |
+      def transform(value):
+          mapping = {
+              'Rcpt': 'Receipt', 
+              'Pymt': 'Payment',
+              'Jrnl': 'Journal',
+              'Cntr': 'Contra',
+              'Sale': 'Sales',
+              'Purc': 'Purchase',
+              'Cred': 'Credit Note',
+              'Debi': 'Debit Note'
+          }
+          return mapping.get(value, value)
+
+# Audit trail configuration
+audit:
+  enabled: true
+  track_fields:
+    - transaction_id
+    - date
+    - amount
+    - description
+  track_transformations: true

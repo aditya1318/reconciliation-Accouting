@@ -1,0 +1,117 @@
+name: Zoho Books Records
+id: zoho_books
+version: 1.0.0
+description: Schema configuration for Zoho Books accounting records
+
+source:
+  supported_formats:
+    - csv
+    - excel
+  encoding: utf-8
+  csv_options:
+    delimiter: ','
+    header_row: 0
+  excel_options:
+    header_row: 0
+  detection_rules:
+    column_patterns:
+      - Date
+      - Transaction Type
+      - Transaction #
+      - Reference #
+      - Customer/Vendor Name
+      - Item/Account
+      - Description
+      - Quantity
+      - Rate
+      - Amount
+
+field_mappings:
+  date:
+    source: Date
+    type: date
+    required: true
+    format: '%d %b %Y'  # Example: 15 Feb 2025
+  description:
+    source: Description
+    type: string
+    required: true
+  amount:
+    source: Amount
+    type: decimal
+    required: true
+  account:
+    source: Item/Account
+    type: string
+    required: true
+  transaction_type:
+    source: Transaction Type
+    type: string
+    required: true
+  name:
+    source: Customer/Vendor Name
+    type: string
+    required: true
+  reference:
+    source: Reference #
+    type: string
+    required: false
+  transaction_number:
+    source: Transaction #
+    type: string
+    required: false
+
+derived_fields:
+  transaction_id:
+    transform: "lambda df, idx: df['transaction_number'] if pd.notna(df['transaction_number']) else f\"ZOHO_{idx}\""
+    type: string
+  entity_type:
+    transform: "lambda x: \"CUSTOMER\" if \"Invoice\" in str(x) or \"Receipt\" in str(x) else \"VENDOR\""
+    source: transaction_type
+    type: string
+  is_expense:
+    transform: "lambda x: float(x) < 0 if x else False"
+    source: amount
+    type: boolean
+  is_income:
+    transform: "lambda x: float(x) > 0 if x else False"
+    source: amount
+    type: boolean
+
+validation_rules:
+  - rule: not_null
+    field: date
+    error_message: Transaction date cannot be null
+  - rule: not_null
+    field: amount 
+    error_message: Amount cannot be null
+  - rule: not_null
+    field: account
+    error_message: Account cannot be null
+  - rule: custom
+    expression: "df['transaction_type'].isin(['Invoice', 'Bill', 'Payment', 'Receipt', 'Journal', 'Credit Note', 'Debit Note', 'Transfer']).all()"
+    error_message: Invalid transaction type
+  - rule: custom
+    expression: "df['name'].notna().all()"
+    error_message: Customer/Vendor name cannot be null
+
+preprocessing:
+  - action: replace_text
+    column: Amount
+    pattern: "₹"
+    replacement: ""
+  - action: replace_text
+    column: Amount
+    pattern: ","
+    replacement: ""
+
+audit:
+  enabled: true
+  track_fields:
+    - date
+    - description
+    - amount
+    - account
+    - transaction_type
+    - name
+  track_transformations: true

@@ -1,0 +1,149 @@
+name: Transform Boundary Schema
+id: transform_boundary
+version: 1.0.0
+description: Schema testing the boundaries of transform functions and derived fields
+
+source:
+  supported_formats:
+    - csv
+  csv_options:
+    delimiter: ','
+    header_row: 0
+
+field_mappings:
+  date:
+    source: Date
+    type: date
+    required: true
+    format: '%Y-%m-%d'
+  amount:
+    source: Amount
+    type: decimal
+    required: true
+    transform: clean_amount  # Valid builtin transform
+  description:
+    source: Description
+    type: string
+    required: true
+    transform: non_existent_function  # Invalid - function doesn't exist
+  category:
+    source: Category
+    type: string
+    required: false
+
+derived_fields:
+  # Valid derived fields
+  transaction_id:
+    transform: "lambda df, idx: f\"TX_{idx}\""
+    type: string
+  
+  abs_amount:
+    transform: "lambda x: abs(float(x))"
+    source: amount
+    type: decimal
+  
+  month:
+    transform: "lambda x: x.month"
+    source: date
+    type: integer
+  
+  # Invalid derived fields
+  invalid_syntax:
+    transform: "lambda x: x.upper("  # Missing closing parenthesis
+    source: description
+    type: string
+  
+  missing_source:
+    transform: "lambda x: x.upper()"
+    # Missing source field
+    type: string
+  
+  invalid_source:
+    transform: "lambda x: x.upper()"
+    source: non_existent_field  # References field that doesn't exist
+    type: string
+  
+  multiple_sources:
+    transform: "lambda a, b: float(a) * float(b)"
+    source: [amount, non_existent_field]  # One valid, one invalid source
+    type: decimal
+  
+  invalid_return_type:
+    transform: "lambda x: float(x) > 0"  # Returns boolean
+    source: amount
+    type: string  # But declares string type
+  
+  complex_transform:
+    transform: "lambda x, y, z: f\"{x.strftime('%Y-%m')}_{y.upper()}_{float(z):.2f}\""
+    source: [date, description, amount]
+    type: string
+  
+  recursive_transform:
+    transform: "lambda x: x"  # References another derived field
+    source: abs_amount  # Valid to reference another derived field
+    type: decimal
+  
+  binary_data:
+    transform: "lambda x: bytes(x, 'utf-8')"  # Returns binary data
+    source: description
+    type: string  # Schema likely expects string, not binary
+  
+  extremely_long_transform:
+    transform: "lambda x: ''.join([chr(ord(c) + 1) if c.isalpha() else c for c in x if c not in '!@#$%^&*()' and not c.isdigit() and c not in [' ', '\t', '\n', '\r'] and ord(c) < 128 and not (c.islower() and ord(c) % 2 == 0) and not (c.isupper() and ord(c) % 2 == 1)])"
+    source: description
+    type: string
+  
+  nested_transforms:
+    transform: "lambda x, y, z: sum([float(x) * 0.1, float(y) * 0.2, float(z) * (0.7 if float(z) > 0 else 0.3)])"
+    source: [amount, "lambda x: float(x) * 2", "lambda x: abs(float(x))"]  # Tries to nest lambdas as sources
+    type: decimal
+
+preprocessing:
+  # Valid preprocessing
+  - action: replace_text
+    column: Description
+    pattern: "\\s+"
+    replacement: " "
+  
+  # Invalid preprocessing
+  - action: unknown_action  # Invalid action type
+    column: Amount
+    parameter: value
+  
+  - action: custom
+    expression: "df['Amount'] = df['Amount].abs()"  # Syntax error - missing closing quote
+    description: "Fix negative amounts"
+  
+  - action: custom
+    expression: "import os; os.system('echo test')"  # Security risk - attempts to execute system command
+    description: "Malicious code attempt"
+
+functions:
+  - name: clean_amount
+    code: |
+      def clean_amount(amount_str):
+          if pd.isna(amount_str):
+              return 0.0
+          # Remove non-numeric characters except decimal point and minus sign
+          clean = re.sub(r'[^0-9.-]', '', str(amount_str))
+          try:
+              return float(clean)
+          except:
+              return 0.0
+  
+  - name: invalid_function
+    code: |
+      def invalid_function(x):
+          # Missing return statement
+          print(x)
+      
+  - name: malicious_function
+    code: |
+      def malicious_function(x):
+          # Attempts to import sensitive modules
+          import os
+          import sys
+          import shutil
+          # Attempts to execute system commands
+          os.system(f"echo {x}")
+          return x

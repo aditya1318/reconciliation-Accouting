@@ -1,0 +1,144 @@
+# Testing YAML structure and syntax boundaries
+name: YAML Structure Boundary Test
+id: yaml_boundary
+version: 1.0.0
+description: |
+  Testing YAML structure limits with:
+  - Extremely nested structures
+  - Complex anchors and aliases
+  - Multi-line strings
+  - Special characters
+
+source:
+  supported_formats:
+    - csv
+    - excel
+  csv_options: &csv_options  # Anchor definition
+    delimiter: ','
+    header_row: 0
+    encoding: 'utf-8'
+  excel_options: *csv_options  # Anchor reference (potentially invalid since excel has different options)
+
+# Testing complex mapping
+complex_mapping: &complex_map
+  level1:
+    level2:
+      level3:
+        level4:
+          level5:
+            level6:
+              level7: 
+                level8:
+                  level9:
+                    level10: "Very deep nesting"
+
+# Special characters in keys
+field_mappings:
+  date:
+    source: Date
+    type: date
+    required: true
+    format: '%Y-%m-%d'
+  "amount$£€¥":  # Field with special characters in name
+    source: "Amount(£)"
+    type: decimal
+    required: true
+  description:
+    source: |
+      Description  # This is a multi-line string
+      with line breaks
+      that could potentially confuse the parser
+    type: string
+    required: true
+  multi-line-key-with-special-characters-!@#$%^&*():
+    source: "Field with extremely long key name that contains special characters"
+    type: string
+    required: false
+
+# Testing references (fixed the circular reference that broke the YAML parser)
+reference1: &ref1
+  name: Reference 1
+  points_to: "Reference 2"  # String instead of reference
+
+reference2: &ref2
+  name: Reference 2
+  points_to: *ref1  # Reference to ref1 (which is already defined)
+
+# Testing complex embedded data structures
+derived_fields:
+  transaction_id:
+    transform: "lambda df, idx: f\"TX_{idx}\""
+    type: string
+  matrix_field:
+    source: amount
+    type: string
+    transform: "lambda x: x"
+    metadata:
+      matrix: [
+        [1, 2, 3, 4, 5],
+        [6, 7, 8, 9, 10],
+        [11, 12, 13, 14, 15],
+        [16, 17, 18, 19, 20],
+        [21, 22, 23, 24, 25]
+      ]
+  embedded_object:
+    source: description
+    type: string
+    transform: "lambda x: x"
+    metadata: *complex_map  # Extremely deep nesting via reference
+
+# Testing extremely long single-line strings
+validation_rules:
+  - rule: custom
+    expression: "df['amount'] > 0 and df['amount'] < 1000000 and not df['description'].str.contains('FRAUD|SCAM|ILLEGAL', case=False) and df['date'] > pd.Timestamp('2020-01-01') and df['date'] < pd.Timestamp('2030-12-31') and not df['description'].isna() and df['description'].str.len() > 5 and df['description'].str.len() < 200 and not df.duplicated(['date', 'amount', 'description']).any() and not (df['amount'] == df['amount'].shift(1) and df['description'] == df['description'].shift(1) and df['date'] == df['date'].shift(1))"
+    error_message: "Failed validation with extremely long and complex expression"
+
+# Testing alternative flow indicators
+flow_sequence_test: [item1, item2, item3, item4, item5, item6, item7, item8, item9, item10, item11, item12, item13, item14, item15, item16, item17, item18, item19, item20]
+flow_mapping_test: {key1: value1, key2: value2, key3: value3, key4: value4, key5: value5, key6: value6, key7: value7, key8: value8, key9: value9, key10: value10}
+
+# Testing extremely complex nested mappings
+preprocessing:
+  - action: custom
+    expression: >
+      df['computed'] = df.apply(
+        lambda row: {
+          'level1': {
+            'level2': {
+              'level3': [
+                {'data': row['amount'], 'type': 'decimal'},
+                {'data': row['date'], 'type': 'date'},
+                {'data': row['description'], 'type': 'string'}
+              ]
+            }
+          }
+        },
+        axis=1
+      )
+    description: "Creating extremely complex nested structures in data"
+
+# Unicode tests
+unicode_field: "Unicode test: 你好, こんにちは, 안녕하세요, Привет, مرحبا, שלום, Γειά σας, नमस्ते"
+
+# Empty mapping test
+empty_map: {}
+
+# Empty sequence test
+empty_sequence: []
+
+# Testing YAML tags
+explicit_string: !!str "This is an explicit string"
+explicit_int: !!int 42
+explicit_float: !!float 3.14159
+explicit_bool: !!bool true
+explicit_null: !!null ~
+
+# Testing complex comments
+functions: # This is a comment
+  # This is another comment
+  - name: test_function # Yet another comment
+    code: | # Multi-line code block
+      # Comment within code block
+      def test_function(x): # Function definition
+          # Function comment
+          return x # Return statement

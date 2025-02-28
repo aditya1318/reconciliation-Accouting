@@ -1,0 +1,157 @@
+# HDFC Bank Statement Schema Configuration
+name: "HDFC Bank"
+id: "hdfc"
+version: "1.0.0"
+description: "Schema configuration for HDFC Bank statements (CSV and Excel formats)"
+
+# Source format details
+source:
+  supported_formats:
+    - csv
+    - excel
+  encoding: "utf-8"
+  excel_options:
+    header_row: 9  # Header row starts at row 9 (0-indexed)
+    skip_footer: 3  # Skip 3 rows at the end
+  csv_options:
+    delimiter: ","
+    header_row: 9
+    skip_footer: 3
+  
+  # Schema detection rules to automatically identify this format
+  detection_rules:
+    # If these columns are present, it's likely HDFC format
+    column_patterns:
+      - "Date"
+      - "Narration"
+      - "Value Dat"
+      - "Withdrawal Amt"
+      - "Deposit Amt"
+
+# Field mappings
+field_mappings:
+  # Standard field mapping format:
+  # target_field: 
+  #   source: source_field_name
+  #   type: data_type
+  #   required: true/false
+  #   transform: transformation_rule (optional)
+
+  # Transaction date
+  date:
+    source: "Date"
+    type: "date"
+    required: true
+    format: "%d/%m/%Y"
+    transform: "date_transform"
+  
+  # Value date (when transaction was actually processed)
+  value_date:
+    source: "Value Dat"
+    type: "date"
+    required: false
+    format: "%d/%m/%Y"
+  
+  # Transaction narration/description
+  narration:
+    source: "Narration"
+    type: "string"
+    required: true
+    transform: "clean_description"
+  
+  # Reference number
+  ref_no:
+    source: "Chq/Ref Number"
+    type: "string"
+    required: false
+  
+  # Debit amount
+  debit:
+    source: "Withdrawal Amt"
+    type: "decimal"
+    required: false
+    transform: "clean_amount"
+  
+  # Credit amount
+  credit:
+    source: "Deposit Amt"
+    type: "decimal"
+    required: false
+    transform: "clean_amount"
+  
+  # Balance
+  balance:
+    source: "Closing Balance"
+    type: "decimal"
+    required: false
+    transform: "clean_amount"
+
+# Derived fields (created after loading the source data)
+derived_fields:
+  # Calculated signed amount (positive for credits, negative for debits)
+  signed_amount:
+    expression: "credit - debit"
+    type: "decimal"
+  
+  # Payment method extracted from narration
+  payment_method:
+    transform: "extract_payment_method"
+    source: "narration"
+    type: "string"
+  
+  # Reference ID extracted from narration
+  reference_id:
+    transform: "extract_reference_id"
+    source: "narration"
+    type: "string"
+  
+  # IFSC code extracted from narration
+  ifsc_code:
+    transform: "extract_ifsc_code"
+    source: "narration"
+    type: "string"
+  
+  # Check if transaction involves GST
+  has_gst:
+    transform: "check_for_gst"
+    source: "narration"
+    type: "boolean"
+  
+  # Check if transaction involves TDS
+  has_tds:
+    transform: "check_for_tds"
+    source: "narration"
+    type: "boolean"
+
+# Data validation rules
+validation_rules:
+  # Ensure all transactions have a date
+  - rule: "not_null"
+    field: "date"
+    error_message: "Transaction date cannot be null"
+  
+  # Ensure either debit or credit has a value
+  - rule: "custom"
+    expression: "not (is_null(debit) and is_null(credit))"
+    error_message: "Either debit or credit must have a value"
+  
+  # Ensure amounts are not negative
+  - rule: "min_value"
+    field: "debit"
+    value: 0
+    error_message: "Debit amount cannot be negative"
+  
+  - rule: "min_value"
+    field: "credit"
+    value: 0
+    error_message: "Credit amount cannot be negative"
+
+# Audit trail configuration
+audit:
+  enabled: true
+  track_fields:
+    - date
+    - narration
+    - debit
+    - credit
+  track_transformations: true

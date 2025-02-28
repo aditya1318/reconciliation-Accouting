@@ -1,0 +1,57 @@
+name: Invalid Validation Schema
+id: invalid_validation
+version: 1.0.0
+description: Schema with invalid validation rules
+
+source:
+  supported_formats:
+    - csv
+  csv_options:
+    delimiter: ','
+    header_row: 0
+
+field_mappings:
+  date:
+    source: Date
+    type: date
+    required: true
+    format: '%Y-%m-%d'
+  amount:
+    source: Amount
+    type: decimal
+    required: true
+  description:
+    source: Description
+    type: string
+    required: true
+
+validation_rules:
+  - rule: not_null  # Missing field parameter
+    error_message: "Field cannot be null"
+  
+  - rule: range_check  # Invalid rule type
+    field: amount
+    min: "thousand"  # Invalid min value - should be numeric
+    max: 100000
+    error_message: "Amount out of range"
+  
+  - rule: custom
+    # Missing expression
+    error_message: "Custom validation failed"
+  
+  - rule: custom
+    expression: "df['amount] > 0"  # Syntax error - missing closing quote
+    error_message: "Amount must be positive"
+  
+  - rule: custom
+    expression: "invalid_function(df['amount'])"  # References non-existent function
+    error_message: "Invalid function call"
+  
+  - rule: pattern_match
+    field: description
+    # Missing pattern
+    error_message: "Description must match pattern"
+  
+  - rule: 123  # Non-string rule identifier
+    field: date
+    error_message: "Invalid rule type"

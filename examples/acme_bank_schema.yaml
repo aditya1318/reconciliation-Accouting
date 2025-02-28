@@ -1,0 +1,71 @@
+name: ACME Bank
+id: acme_bank
+version: 1.0.0
+description: Schema configuration for ACME Bank statements
+source:
+  supported_formats:
+  - csv
+  - excel
+  encoding: utf-8
+  csv_options:
+    delimiter: ','
+    header_row: 0
+  excel_options:
+    header_row: 0
+  detection_rules:
+    column_patterns:
+    - Transaction Date
+    - Debit Amount
+    - Credit Amount
+    - Description
+    - Balance
+field_mappings:
+  date:
+    source: Transaction Date
+    type: date
+    required: true
+    format: '%d-%m-%Y'
+  debit:
+    source: Debit Amount
+    type: decimal
+    required: false
+    transform: clean_amount
+  credit:
+    source: Credit Amount
+    type: decimal
+    required: false
+    transform: clean_amount
+  narration:
+    source: Description
+    type: string
+    required: true
+    transform: clean_description
+  balance:
+    source: Balance
+    type: decimal
+    required: true
+    transform: clean_amount
+derived_fields:
+  payment_method:
+    transform: extract_payment_method
+    source: narration
+    type: string
+  reference_id:
+    transform: extract_reference_id
+    source: narration
+    type: string
+validation_rules:
+- rule: not_null
+  field: date
+  error_message: Transaction date cannot be null
+- rule: custom
+  expression: not (df["debit"].isna() & df["credit"].isna())
+  error_message: Either debit or credit must have a value
+audit:
+  enabled: true
+  track_fields:
+  - date
+  - narration
+  - debit
+  - credit
+  track_transformations: true

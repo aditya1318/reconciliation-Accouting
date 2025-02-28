@@ -1,0 +1,42 @@
+name: Invalid Types Schema
+id: invalid_types
+version: 1.0.0
+description: Schema with various invalid data types
+
+source:
+  supported_formats:
+    - csv
+  csv_options:
+    delimiter: ','
+    header_row: 0
+
+field_mappings:
+  date:
+    source: Transaction Date
+    type: date_time  # Invalid type - should be 'date'
+    required: true
+    format: '%Y-%m-%d'
+  amount:
+    source: Amount
+    type: money  # Invalid type - should be 'decimal'
+    required: true
+  description:
+    source: Description
+    type: text  # Invalid type - should be 'string'
+    required: true
+  category:
+    source: Category
+    type: enum  # Invalid type - should be 'string' with allowed_values
+    allowed_values:  # This should be under a different structure
+      - Food
+      - Transport
+      - Entertainment
+  reference:
+    source: Reference
+    type: integer
+    required: false
+    format: 10  # Invalid - format applies to date/time, not integers
+  status:
+    source: Status
+    type: bool  # Invalid type - should be 'boolean'
+    default: YES  # Invalid default - should be true/false

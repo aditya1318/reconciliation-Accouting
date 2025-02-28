@@ -1,0 +1,96 @@
+name: QuickBooks Records
+id: quickbooks
+version: 1.0.0
+description: Schema configuration for QuickBooks accounting records
+
+source:
+  supported_formats:
+    - csv
+    - excel
+  encoding: utf-8
+  csv_options:
+    delimiter: ','
+    header_row: 0
+  excel_options:
+    header_row: 0
+  detection_rules:
+    column_patterns:
+      - Transaction Date
+      - Transaction Type
+      - Num
+      - Name
+      - Memo/Description
+      - Account
+      - Amount
+
+field_mappings:
+  date:
+    source: Transaction Date
+    type: date
+    required: true
+    format: '%Y-%m-%d'
+  description:
+    source: Memo/Description
+    type: string
+    required: true
+  amount:
+    source: Amount
+    type: decimal
+    required: true
+  account:
+    source: Account
+    type: string
+    required: true
+  transaction_type:
+    source: Transaction Type
+    type: string
+    required: true
+  name:
+    source: Name
+    type: string
+    required: false
+  reference:
+    source: Num
+    type: string
+    required: false
+
+derived_fields:
+  transaction_id:
+    transform: "lambda df, idx: f\"QB_{df['transaction_type']}_{idx}\""
+    type: string
+  category:
+    transform: "lambda x: x.split(':')[-1] if ':' in str(x) else x"
+    source: account
+    type: string
+  is_expense:
+    transform: "lambda x: float(x) < 0 if x else False"
+    source: amount
+    type: boolean
+  is_income:
+    transform: "lambda x: float(x) > 0 if x else False"
+    source: amount
+    type: boolean
+
+validation_rules:
+  - rule: not_null
+    field: date
+    error_message: Transaction date cannot be null
+  - rule: not_null
+    field: amount 
+    error_message: Amount cannot be null
+  - rule: not_null
+    field: account
+    error_message: Account cannot be null
+  - rule: custom
+    expression: "df['transaction_type'].isin(['Invoice', 'Payment', 'Bill', 'Check', 'Deposit', 'Transfer']).all()"
+    error_message: Invalid transaction type
+
+audit:
+  enabled: true
+  track_fields:
+    - date
+    - description
+    - amount
+    - account
+    - transaction_type
+  track_transformations: true

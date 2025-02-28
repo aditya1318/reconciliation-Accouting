@@ -1,0 +1,17 @@
+# Invalid schema missing required fields
+name: Missing Required Fields
+# Missing id field
+version: 1.0.0
+description: Invalid schema missing required fields
+
+source:
+  supported_formats:
+    - csv
+  # Missing csv_options
+
+field_mappings:
+  date:
+    # Missing source field
+    type: date
+    required: true
+    format: '%Y-%m-%d'

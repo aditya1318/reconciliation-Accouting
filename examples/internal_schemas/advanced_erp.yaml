@@ -1,0 +1,288 @@
+name: Advanced ERP System
+id: advanced_erp
+version: 1.0.0
+description: Schema configuration for complex ERP system with hierarchical accounting, multi-entity support, and tax handling
+
+source:
+  supported_formats:
+    - csv
+    - excel
+    - json
+    - xml
+  encoding: utf-8
+  csv_options:
+    delimiter: '|'  # Pipe-delimited
+    header_row: 0
+    na_values: ["N/A", "NULL", "None", "-"]
+  excel_options:
+    header_row: 0
+    sheet_prefix: "TXN_"  # Look for sheets starting with TXN_
+    na_values: ["N/A", "NULL", "None", "-"]
+  json_options:
+    root_path: "$.financial_data.journal_entries[*]"
+    date_format: "YYYY-MM-DD"
+  xml_options:
+    root_xpath: "/GeneralLedger/JournalEntries/Entry"
+    namespaces:
+      gl: "http://example.org/GL/2025"
+  detection_rules:
+    column_patterns:
+      - Entry ID
+      - Journal ID
+      - Posting Date
+      - Transaction Date
+      - Entity Code
+      - Entity Name
+      - Document Type
+      - Document Number
+      - Account Code
+      - Account Name
+      - Debit Amount
+      - Credit Amount
+      - Base Currency
+      - Department Code
+      - Cost Center
+      - Project Code
+      - Tax Code
+      - Tax Amount
+      - Description
+      - Source Module
+
+field_mappings:
+  entry_id:
+    source: Entry ID
+    type: string
+    required: true
+  journal_id:
+    source: Journal ID
+    type: string
+    required: true
+  posting_date:
+    source: Posting Date
+    type: date
+    required: true
+    format: '%Y-%m-%d'
+  transaction_date:
+    source: Transaction Date
+    type: date
+    required: true
+    format: '%Y-%m-%d'
+  entity_code:
+    source: Entity Code
+    type: string
+    required: true
+  entity_name:
+    source: Entity Name
+    type: string
+    required: false
+  document_type:
+    source: Document Type
+    type: string
+    required: true
+    allowed_values: ["INV", "PMT", "JV", "CM", "DM", "PO", "SO", "GRN", "BNK", "EXP"]
+  document_number:
+    source: Document Number
+    type: string
+    required: true
+  account_code:
+    source: Account Code
+    type: string
+    required: true
+  account_name:
+    source: Account Name
+    type: string
+    required: false
+  debit_amount:
+    source: Debit Amount
+    type: decimal
+    required: false
+    default: 0.00
+    transform: clean_amount
+  credit_amount:
+    source: Credit Amount
+    type: decimal
+    required: false
+    default: 0.00
+    transform: clean_amount
+  currency:
+    source: Base Currency
+    type: string
+    required: false
+    default: "INR"
+  department_code:
+    source: Department Code
+    type: string
+    required: false
+  cost_center:
+    source: Cost Center
+    type: string
+    required: false
+  project_code:
+    source: Project Code
+    type: string
+    required: false
+  tax_code:
+    source: Tax Code
+    type: string
+    required: false
+  tax_amount:
+    source: Tax Amount
+    type: decimal
+    required: false
+    default: 0.00
+    transform: clean_amount
+  description:
+    source: Description
+    type: string
+    required: true
+  source_module:
+    source: Source Module
+    type: string
+    required: false
+    allowed_values: ["AP", "AR", "GL", "FA", "INV", "PO", "SO", "CASH", "BANK", "PAYROLL"]
+
+derived_fields:
+  transaction_id:
+    transform: "lambda df, idx: f\"{df['entity_code']}_{df['journal_id']}_{df['entry_id']}\""
+    type: string
+  amount:
+    transform: "lambda d, c: float(d) - float(c) if pd.notna(d) and pd.notna(c) else (float(d) if pd.notna(d) else -float(c) if pd.notna(c) else 0.0)"
+    source: [debit_amount, credit_amount]
+    type: decimal
+  fiscal_year:
+    transform: "lambda x: x.year if pd.to_datetime(x).month >= 4 else x.year - 1"  # Indian fiscal year (April-March)
+    source: posting_date
+    type: integer
+  fiscal_period:
+    transform: "lambda x: f\"FY{x.year if pd.to_datetime(x).month >= 4 else x.year - 1}-{(x.year + 1) if pd.to_datetime(x).month >= 4 else x.year}\""
+    source: posting_date
+    type: string
+  fiscal_quarter:
+    transform: "lambda x: ((pd.to_datetime(x).month - 4) % 12) // 3 + 1"  # Q1 starts in April
+    source: posting_date
+    type: integer
+  account_category:
+    transform: "lambda x: x.split('.')[0] if '.' in x else x[:2]"
+    source: account_code
+    type: string
+  account_type:
+    transform: "lambda code: next((t for t, p in {'ASSET': '^[1]', 'LIABILITY': '^[2]', 'EQUITY': '^[3]', 'REVENUE': '^[4]', 'EXPENSE': '^[5-9]'}.items() if re.match(p, code)), 'OTHER')"
+    source: account_code
+    type: string
+  is_balance_sheet:
+    transform: "lambda x: x in ['ASSET', 'LIABILITY', 'EQUITY']"
+    source: account_type
+    type: boolean
+  is_income_statement:
+    transform: "lambda x: x in ['REVENUE', 'EXPENSE']"
+    source: account_type
+    type: boolean
+  has_tax:
+    transform: "lambda code, amt: pd.notna(code) and pd.notna(amt) and float(amt) > 0"
+    source: [tax_code, tax_amount]
+    type: boolean
+  tax_rate:
+    transform: "lambda code: float(re.search(r'\\d+', code).group()) / 100 if pd.notna(code) and re.search(r'\\d+', str(code)) else 0.0"
+    source: tax_code
+    type: decimal
+  taxable_amount:
+    transform: "lambda amt, rate: float(amt) / (1 + float(rate)) if float(rate) > 0 else float(amt)"
+    source: [amount, tax_rate]
+    type: decimal
+  document_date:
+    transform: "lambda x, y: min(pd.to_datetime(x), pd.to_datetime(y)) if pd.notna(x) and pd.notna(y) else (pd.to_datetime(x) if pd.notna(x) else pd.to_datetime(y))"
+    source: [transaction_date, posting_date]
+    type: date
+  financial_impact:
+    transform: "lambda type, amt: 'INCREASE' if (type == 'ASSET' and float(amt) > 0) or (type == 'LIABILITY' and float(amt) < 0) or (type == 'EQUITY' and float(amt) < 0) or (type == 'REVENUE' and float(amt) < 0) or (type == 'EXPENSE' and float(amt) > 0) else 'DECREASE'"
+    source: [account_type, amount]
+    type: string
+
+validation_rules:
+  - rule: not_null
+    field: transaction_id
+    error_message: Transaction ID cannot be null
+  - rule: not_null
+    field: account_code
+    error_message: Account code cannot be null
+  - rule: custom
+    expression: "(df['debit_amount'] > 0) | (df['credit_amount'] > 0) | ((df['debit_amount'] == 0) & (df['credit_amount'] == 0))"
+    error_message: Either debit or credit amount should be greater than zero
+  - rule: custom
+    expression: "df.groupby('journal_id')['amount'].sum().round(2).abs() < 0.01"
+    error_message: Journal entries must balance (sum to zero)
+  - rule: custom
+    expression: "df['posting_date'] <= pd.Timestamp('now')"
+    error_message: Posting date cannot be in the future
+  - rule: custom
+    expression: "abs(df['transaction_date'] - df['posting_date']).dt.days <= 90"
+    error_message: Transaction and posting dates should not differ by more than 90 days
+  - rule: custom
+    expression: "df[df['tax_code'].notna()]['tax_amount'] > 0"
+    error_message: Tax amount must be positive when tax code is provided
+  - rule: custom
+    expression: "df.groupby('account_code')['account_name'].nunique() <= 1"
+    error_message: Account code should have consistent account name
+  - rule: custom
+    expression: "pd.to_datetime(df['fiscal_year'].astype(str) + '-04-01') <= df['posting_date']"
+    error_message: Posting date should be consistent with fiscal year
+
+preprocessing:
+  - action: replace_text
+    column: Description
+    pattern: "\\s+"
+    replacement: " "
+  - action: custom
+    expression: "df['Account Code'] = df['Account Code'].astype(str).str.strip()"
+    description: "Standardize account codes"
+  - action: custom
+    expression: "df['Debit Amount'] = df['Debit Amount'].fillna(0).astype(float)"
+    description: "Fill missing debit amounts with zero"
+  - action: custom
+    expression: "df['Credit Amount'] = df['Credit Amount'].fillna(0).astype(float)"
+    description: "Fill missing credit amounts with zero"
+  - action: custom
+    expression: "df['Document Type'] = df['Document Type'].str.upper()"
+    description: "Standardize document types to uppercase"
+  - action: custom
+    expression: "from datetime import datetime; df['Posting Date'] = pd.to_datetime(df['Posting Date']).fillna(datetime.now())"
+    description: "Ensure posting date is a valid date"
+
+postprocessing:
+  - action: add_summary
+    field: journal_summary
+    expression: "df.groupby('journal_id')[['debit_amount', 'credit_amount']].sum().to_dict()"
+    description: "Add journal totals summary"
+  - action: add_summary
+    field: account_summary
+    expression: "df.groupby('account_code')[['debit_amount', 'credit_amount']].sum().assign(net=lambda x: x['debit_amount'] - x['credit_amount']).to_dict()"
+    description: "Add account summary"
+  - action: compute_field
+    target: tax_summary
+    expression: "df[df['tax_code'].notna()].groupby('tax_code')['tax_amount'].sum().to_dict()"
+    description: "Calculate tax totals by tax code"
+  - action: compute_field
+    target: entity_balance
+    expression: "df.groupby(['entity_code', 'account_type'])['amount'].sum().to_dict()"
+    description: "Calculate entity balances by account type"
+  - action: compute_field
+    target: accounts_with_errors
+    expression: "df[df['debit_amount'] == df['credit_amount']]['account_code'].unique().tolist()"
+    description: "Identify accounts with potential errors"
+
+audit:
+  enabled: true
+  track_fields:
+    - journal_id
+    - entry_id
+    - posting_date
+    - account_code
+    - debit_amount
+    - credit_amount
+    - description
+  track_transformations: true
+  track_validation_failures: true
+  create_snapshots: true
+  include_user_info: true
+  track_dependencies: true
+  track_calculations: true

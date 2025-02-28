@@ -1,18 +1,18 @@
-pandas==2.0.3
-numpy==1.24.3
-python-dateutil==2.8.2
-openpyxl==3.1.2
-xlrd==2.0.1
-fuzzywuzzy==0.18.0
-python-Levenshtein==0.21.1
-pyyaml==6.0.1
+pandas
+numpy
+python-dateutil
+openpyxl
+xlrd
+fuzzywuzzy
+python-Levenshtein
+pyyaml
 # OCR dependencies
-pytesseract==0.3.10
-pdf2image==1.16.3
-opencv-python==4.8.0.74
-Pillow==10.0.0
+pytesseract
+pdf2image
+opencv-python
+Pillow
 # Email dependencies
-secure-smtplib==0.1.1
-python-dotenv==1.0.0
-email-validator==2.0.0
-beautifulsoup4==4.12.2
+secure-smtplib
+python-dotenv
+email-validator
+beautifulsoup4

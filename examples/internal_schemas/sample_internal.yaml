@@ -1,0 +1,52 @@
+name: Sample Internal Records
+id: sample_internal
+version: 1.0.0
+description: Schema configuration for sample internal records
+source:
+  supported_formats:
+  - csv
+  - excel
+  encoding: utf-8
+  csv_options:
+    delimiter: ','
+    header_row: 0
+  excel_options:
+    header_row: 0
+  detection_rules:
+    column_patterns:
+    - Date
+    - Description
+    - Amount
+    - Reference
+field_mappings:
+  date:
+    source: Date
+    type: date
+    required: true
+  description:
+    source: Description
+    type: string
+    required: true
+  amount:
+    source: Amount
+    type: decimal
+    required: true
+  reference:
+    source: Reference
+    type: string
+    required: false
+validation_rules:
+- rule: not_null
+  field: date
+  error_message: Date cannot be null
+- rule: not_null
+  field: amount
+  error_message: Amount cannot be null
+audit:
+  enabled: true
+  track_fields:
+  - date
+  - description
+  - amount
+  - reference
+  track_transformations: true

@@ -1,0 +1,342 @@
+name: Extreme Boundary Test Schema
+id: extreme_boundary
+version: 1.0.0
+description: |
+  This schema pushes the absolute limits of the schema validation system with:
+  - Extreme number of fields and validation rules
+  - Maximum complexity transformations
+  - Edge cases for security and validation
+  - Unusual/extreme data patterns and values
+
+source:
+  supported_formats:
+    - csv
+    - excel
+    - json
+    - xml
+    - pdf
+    - text
+  encoding: utf-8
+  csv_options:
+    delimiter: ','
+    header_row: 0
+    skip_rows: [0, 1, 2]
+    comment: '#'
+    na_values: ["-", "N/A", "NULL", "None", ""]
+    thousands: ','
+    decimal: '.'
+    quoting: 3  # QUOTE_NONE
+    doublequote: true
+    escapechar: '\\'
+    date_format: '%Y-%m-%d'
+    lineterminator: '\r\n'
+    quotechar: '"'
+    skipinitialspace: true
+  detection_rules:
+    min_confidence: 0.0000001
+    max_fields: 99999
+    text_patterns:
+      - ".*"  # Match anything
+
+field_mappings:
+  # Test maximum number of fields (just showing first few)
+  field_1:
+    source: Field 1
+    type: string
+    required: true
+  field_2:
+    source: Field 2
+    type: string
+    required: false
+  field_3:
+    source: Field 3
+    type: date
+    format: '%Y-%m-%d'
+    required: false
+  # ... imagine 100 more fields ...
+  
+  # Test extreme field length
+  extremely_long_field_name_with_many_characters_that_exceeds_normal_lengths_and_might_cause_issues_with_database_columns_or_memory_allocation_or_display_in_user_interfaces_and_so_on_and_so_forth_continuing_for_quite_some_time_really_pushing_boundaries:
+    source: Extremely Long Field Source Name That Also Exceeds Normal Boundaries And Might Cause Similar Issues With Memory Allocation Display Or Processing
+    type: string
+    required: false
+    
+  # Test unusual numeric limits
+  max_decimal:
+    source: Max Decimal
+    type: decimal
+    default: 1.7976931348623157e+308  # Max double precision 
+    
+  min_decimal:
+    source: Min Decimal
+    type: decimal
+    default: 2.2250738585072014e-308  # Near min positive double precision
+    
+  max_integer:
+    source: Max Integer
+    type: integer
+    default: 9223372036854775807  # Max 64-bit signed int
+    
+  min_integer:
+    source: Min Integer
+    type: integer
+    default: -9223372036854775808  # Min 64-bit signed int
+    
+  # Test extreme date ranges
+  far_future_date:
+    source: Far Future Date
+    type: date
+    format: '%Y-%m-%d'
+    default: '9999-12-31'  # Far future
+    
+  far_past_date:
+    source: Far Past Date
+    type: date
+    format: '%Y-%m-%d'
+    default: '0001-01-01'  # Far past
+    
+  # Test special characters in values
+  special_chars:
+    source: Special Chars
+    type: string
+    default: "!@#$%^&*()_+{}|:<>?~`-=[]\\;',./¿¡€£¥©®™°±×÷§¶•ªº«»αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ"
+    
+  # Test various Unicode scripts
+  unicode_test:
+    source: Unicode Test
+    type: string
+    default: "Latin: Hello, Cyrillic: Привет, Greek: Γειά σου, Arabic: مرحبا, Hebrew: שלום, Hindi: नमस्ते, Japanese: こんにちは, Chinese: 你好, Korean: 안녕하세요, Thai: สวัสดี, Emoji: 🌍🚀🔥🎉👋"
+
+derived_fields:
+  # Test maximum recursion and complexity in derived fields
+  factorial:
+    transform: "lambda n: 1 if int(n) <= 1 else int(n) * int(eval(f\"lambda n: 1 if int(n) <= 1 else int(n) * int(eval('lambda n: 1 if int(n) <= 1 else int(n) * int(n-1)')(int(n)-1))\")(int(n)-1))"
+    source: field_1
+    type: integer
+    
+  nested_ternary:
+    transform: "lambda x: 'A' if x == '1' else ('B' if x == '2' else ('C' if x == '3' else ('D' if x == '4' else ('E' if x == '5' else ('F' if x == '6' else ('G' if x == '7' else ('H' if x == '8' else ('I' if x == '9' else 'J'))))))))"
+    source: field_2
+    type: string
+    
+  massive_regex:
+    transform: "lambda s: re.sub(r'^(?:(?:https?|ftp)://)(?:\\S+(?::\\S*)?@)?(?:(?!10(?:\\\\.\\\\d{1,3}){3})(?!127(?:\\\\.\\\\d{1,3}){3})(?!169\\\\.254(?:\\\\.\\\\d{1,3}){2})(?!192\\\\.168(?:\\\\.\\\\d{1,3}){2})(?!172\\\\.(?:1[6-9]|2\\\\d|3[0-1])(?:\\\\.\\\\d{1,3}){2})(?:[1-9]\\\\d?|1\\\\d\\\\d|2[01]\\\\d|22[0-3])(?:\\\\.(?:1?\\\\d{1,2}|2[0-4]\\\\d|25[0-5])){2}(?:\\\\.(?:[1-9]\\\\d?|1\\\\d\\\\d|2[0-4]\\\\d|25[0-4]))(?::\\\\d{2,5})?(?:/\\\\S*)?$', '', str(s))"
+    source: field_3
+    type: string
+  
+  # Test extremely large transforms (simulated)
+  massive_transform:
+    transform: "lambda x: ''.join([chr((ord(c) + 5) % 128) if isinstance(c, str) and c.isalpha() else c for c in str(x)])"
+    source: special_chars
+    type: string
+    
+  # Test chained transform
+  transform_chain:
+    transform: "lambda x, y, z: float(x) + len(str(y)) + (ord(str(z)[0]) if str(z) else 0)"
+    source: [field_1, field_2, field_3]
+    type: decimal
+    
+  # Test security risk transforms (should be rejected)
+  eval_transform:
+    transform: "lambda x: eval(f\"'Evaluated: {x}'\")"
+    source: field_1
+    type: string
+    
+  exec_transform:
+    transform: "lambda x: exec(f\"print('Should not execute this')\")"
+    source: field_1
+    type: string
+    
+  import_transform:
+    transform: "lambda x: __import__('os').system('echo potential security risk')"
+    source: field_1
+    type: string
+
+validation_rules:
+  # Test edge case validation rules
+  - rule: custom
+    expression: "True"  # Always passes
+    error_message: "This should never fail"
+    
+  - rule: custom
+    expression: "False"  # Always fails
+    error_message: "This always fails"
+  
+  - rule: custom
+    expression: "df.shape[0] > 0 and df.shape[1] > 0"  # Basic dimensionality check
+    error_message: "DataFrame must have rows and columns"
+    
+  - rule: custom
+    expression: "df['field_1'].apply(lambda x: isinstance(x, (int, float, str, bool, datetime)) or pd.isna(x)).all()"
+    error_message: "field_1 must be primitive type or NA"
+    
+  - rule: custom
+    expression: "df['field_1'].str.len() <= 10**6"  # Extremely long string check
+    error_message: "field_1 must be less than 1 million characters"
+  
+  # Test regex injection
+  - rule: pattern_match
+    field: field_1
+    pattern: "^(a+)+$"  # Regex that can cause catastrophic backtracking
+    min_match_percent: 1
+    error_message: "field_1 must match potential ReDoS pattern"
+    
+  # Test SQL injection check
+  - rule: custom
+    expression: "~df['field_1'].str.contains(\"'\", regex=False).any()"
+    error_message: "field_1 must not contain single quotes (SQL injection risk)"
+    
+  # Test extremely complex validation
+  - rule: custom
+    expression: "len(set(df['field_1'].tolist()) & set(df['field_2'].tolist())) == 0"
+    error_message: "field_1 and field_2 must have no values in common"
+    
+  # Test extremely large number of validation rules (simulated)
+  # In reality, there might be hundreds more here...
+
+preprocessing:
+  # Test complex preprocessing chain
+  - action: custom
+    expression: "df.iloc[:, :] = df.iloc[:, :].fillna('')"
+    description: "Fill all NA values with empty string"
+  
+  # Test potential security risk preprocessing
+  - action: custom
+    expression: "import os; os.environ['TEST_VAR'] = 'test'"
+    description: "Set environment variable"
+    
+  # Test memory-intensive operation
+  - action: custom
+    expression: "df = pd.concat([df] * 10)"
+    description: "Replicate the dataframe 10 times"
+    
+  # Test performance-intensive operation
+  - action: custom
+    expression: "for i in range(1000): df['temp_col_{}'.format(i)] = df['field_1']; del df['temp_col_{}'.format(i)]"
+    description: "Create and delete 1000 temporary columns"
+
+postprocessing:
+  # Test maximum allowed postprocessing
+  - action: compute_field
+    target: row_count
+    expression: "len(df)"
+    description: "Count rows"
+    
+  - action: compute_field
+    target: column_count
+    expression: "len(df.columns)"
+    description: "Count columns"
+    
+  # Test injection of system-level operations
+  - action: custom
+    expression: "result = {'success': True, 'system_info': str(sys.path)}"
+    description: "Attempt to access system information"
+
+functions:
+  # Test extremely long function
+  - name: extremely_long_function
+    code: |
+      def extremely_long_function(value):
+          """
+          This function is extremely long with many lines that do various complex things
+          with the input value, potentially risking memory, performance, or security issues.
+          """
+          # Initialize result
+          result = str(value)
+          
+          # Create a large dictionary
+          large_dict = {i: chr(i % 128) for i in range(10000)}
+          
+          # Do complex text manipulation
+          for i in range(100):
+              result = result.replace(str(i), large_dict.get(i, '_'))
+          
+          # Create unnecessary intermediate variables
+          intermediate1 = result + " " + result
+          intermediate2 = intermediate1 + " " + intermediate1
+          intermediate3 = intermediate2 + " " + intermediate2
+          
+          # Simulate complex logic with deep nesting
+          if len(result) > 0:
+              if len(result) > 10:
+                  if len(result) > 100:
+                      if len(result) > 1000:
+                          result = result[:1000]  # Truncate
+                      else:
+                          result = result * 2  # Double it
+                  else:
+                      result = result.upper()
+              else:
+                  result = "Short: " + result
+          
+          # Return the final result after all this processing
+          return result[:1000]  # Ensure we return at most 1000 chars
+
+  # Test potential security risk function
+  - name: risky_function
+    code: |
+      def risky_function(value):
+          """This function attempts operations that might pose security risks."""
+          # Try to open a file (should be blocked)
+          try:
+              with open('/tmp/test.txt', 'w') as f:
+                  f.write(str(value))
+          except:
+              pass
+          
+          # Try to import a sensitive module (should be blocked)
+          try:
+              import subprocess
+              subprocess.run(['echo', str(value)])
+          except:
+              pass
+          
+          # In any case, return the value
+          return str(value)
+
+  # Test possibly infinite loop
+  - name: potential_infinite_loop
+    code: |
+      def potential_infinite_loop(value):
+          """This function could go into an infinite loop for certain inputs."""
+          result = str(value)
+          counter = 0
+          limit = 1000000  # Safety limit
+          
+          # This could be an infinite loop without the safety counter
+          while len(result) < 100 and counter < limit:
+              result += str(value)
+              counter += 1
+          
+          return result[:100]  # Return at most 100 chars
+
+# Test unusual YAML features
+empty_value:
+null_value: null
+~ : "key is a single tilde"
+# Python tuple tags are disabled in most parsers, commenting it out
+# ? !!python/tuple [0, 0]
+# : "key is a tuple (unlikely to work)"
+complex_key:
+  '0,0': "key is a string representation of a sequence"  # Using a string instead of a sequence
+
+# Test deliberate YAML syntax issue (commented out to allow file to parse)
+# this line is: intentionally broken syntax - -
+
+# Test extremely large key hierarchy (simulated)
+metadata:
+  level1: 
+    level2: 
+      level3: 
+        level4: 
+          level5: 
+            level6: 
+              level7: 
+                level8: 
+                  level9: 
+                    level10: 
+                      level11: 
+                        level12: 
+                          level13: 
+                            level14: 
+                              level15: "Deep nesting"

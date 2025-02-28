@@ -1,0 +1,347 @@
+name: OCR-Extracted PDF Bank Statement
+id: ocr_pdf_bank
+version: 1.0.0
+description: Schema configuration for handling OCR-extracted data from PDF bank statements with formatting irregularities
+
+source:
+  supported_formats:
+    - csv
+    - excel
+    - pdf
+    - text
+  encoding: utf-8
+  csv_options:
+    delimiter: ','
+    header_row: 0
+    infer_header: true  # Try to infer header if not detected
+  excel_options:
+    header_row: 0
+  pdf_options:
+    extraction_method: "ocr"
+    ocr_engine: "tesseract"
+    ocr_language: "eng"
+    table_detection: true
+    confidence_threshold: 70
+    page_range: "all"
+    areas_of_interest:
+      - name: "header"
+        coordinates: [50, 50, 700, 150]
+      - name: "transactions"
+        coordinates: [50, 200, 700, 600]
+      - name: "footer"
+        coordinates: [50, 650, 700, 750]
+  text_options:
+    line_separator: "\n"
+    record_separator: "\\r\\n\\r\\n"
+    encoding_fallbacks: ["latin1", "cp1252", "utf-16"]
+  detection_rules:
+    text_patterns:
+      - "STATEMENT OF ACCOUNT"
+      - "TRANSACTION HISTORY"
+      - "OPENING BALANCE"
+      - "DATE"
+      - "DESCRIPTION"
+      - "DEBIT"
+      - "CREDIT"
+      - "CLOSING BALANCE"
+    column_patterns:
+      - "DATE|Date|date|Dt"
+      - "DESCRIPTION|Description|Particulars|Narration|Details"
+      - "WITHDRAWAL|DEBIT|Dr|Debit|AMOUNT DEBIT|CHQ.NO|Withdrawal"
+      - "DEPOSIT|CREDIT|Cr|Credit|AMOUNT CREDIT|Deposit"
+      - "BALANCE|Balance|Closing Balance|CLOSING BAL"
+
+field_mappings:
+  date:
+    source: ["DATE", "Date", "date", "Dt", "Transaction Date", "Value Date", "Txn Date", "Posting Date"]
+    type: date
+    required: true
+    format: ["auto", "%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y", "%Y-%m-%d", "%d-%b-%Y", "%d %b %Y", "%b %d, %Y"]
+    transform: clean_and_convert_date
+  description:
+    source: ["DESCRIPTION", "Description", "Particulars", "Narration", "Details", "Transaction Details"]
+    type: string
+    required: true
+    transform: clean_description
+  debit:
+    source: ["WITHDRAWAL", "DEBIT", "Dr", "Debit", "AMOUNT DEBIT", "CHQ.NO", "Withdrawal", "DR", "Debit Amount"]
+    type: decimal
+    required: false
+    transform: extract_amount
+  credit:
+    source: ["DEPOSIT", "CREDIT", "Cr", "Credit", "AMOUNT CREDIT", "Deposit", "CR", "Credit Amount"]
+    type: decimal
+    required: false
+    transform: extract_amount
+  balance:
+    source: ["BALANCE", "Balance", "Closing Balance", "CLOSING BAL", "Running Balance", "CURR BAL"]
+    type: decimal
+    required: true
+    transform: extract_amount
+  cheque_number:
+    source: ["CHQ.NO", "Cheque No", "Cheque Number", "Chq No", "Check Number"]
+    type: string
+    required: false
+    transform: extract_cheque_number
+  reference:
+    source: ["Ref", "Reference", "Ref No", "Ref. No.", "REF", "REF NO"]
+    type: string
+    required: false
+
+derived_fields:
+  transaction_id:
+    transform: "lambda df, idx: f\"OCR_{df['date'].strftime('%Y%m%d') if hasattr(df['date'], 'strftime') else ''}_{idx}\""
+    type: string
+  amount:
+    transform: "lambda d, c: -float(d) if pd.notna(d) and float(d) > 0 else (float(c) if pd.notna(c) and float(c) > 0 else 0.0)"
+    source: [debit, credit]
+    type: decimal
+  transaction_type:
+    transform: "lambda desc, d, c: extract_transaction_type(desc, d, c)"
+    source: [description, debit, credit]
+    type: string
+  corrected_description:
+    transform: "lambda x: apply_ocr_corrections(x)"
+    source: description
+    type: string
+  cheque_transaction:
+    transform: "lambda x: pd.notna(x) and str(x).strip() != ''"
+    source: cheque_number
+    type: boolean
+  cleaned_amount:
+    transform: "lambda x: float(re.sub(r'[^0-9.-]', '', str(x))) if pd.notna(x) else 0.0"
+    source: amount
+    type: decimal
+  confidence_score:
+    transform: "lambda d, a, b: calculate_confidence_score(d, a, b)"
+    source: [description, amount, balance]
+    type: decimal
+
+validation_rules:
+  - rule: required_field_presence
+    fields: [date, description, amount]
+    min_percent: 75
+    error_message: "Required fields missing in more than 25% of records"
+  - rule: fuzzy_date_format
+    field: date
+    min_confidence: 70
+    error_message: "Could not parse date with sufficient confidence"
+  - rule: custom
+    expression: "pd.to_datetime(df['date'], errors='coerce').notna().mean() >= 0.9"
+    error_message: "More than 10% of dates could not be parsed"
+  - rule: custom
+    expression: "df['confidence_score'].mean() >= 0.7"
+    error_message: "Average confidence score below threshold"
+  - rule: custom
+    expression: "df[df['amount'].notna()].shape[0] / df.shape[0] >= 0.8"
+    error_message: "More than 20% of records are missing amount"
+  - rule: outlier_check
+    field: amount
+    method: z_score
+    threshold: 5.0
+    error_message: "Extreme outliers detected in transaction amounts"
+  - rule: pattern_match
+    field: description
+    pattern: "\\S{3,}"
+    min_match_percent: 90
+    error_message: "Descriptions contain too many invalid or empty values"
+  - rule: balance_continuity
+    fields: [balance, amount]
+    tolerance: 1.0
+    error_message: "Balance continuity check failed"
+
+preprocessing:
+  - action: string_cleanup
+    columns: "*"
+    operations: ["strip", "normalize_whitespace", "remove_control_chars"]
+  - action: replace_text
+    column: "*"
+    pattern: "[\\s\\u200B\\u00A0]+"
+    replacement: " "
+  - action: replace_text
+    column: description
+    pattern: "(CR|DR|\\bdeb\\b|\\bcr\\b)"
+    replacement: ""
+  - action: regex_extract
+    source_column: description
+    target_column: cheque_number
+    pattern: "CHQ[\\s:.#-]*([0-9]{6,})"
+    group: 1
+    overwrite: false
+  - action: custom
+    expression: "df['date'] = pd.to_datetime(df['date'], errors='coerce', infer_datetime_format=True)"
+    description: "Attempt to convert dates with inference"
+  - action: custom
+    expression: "for col in ['debit', 'credit', 'balance']: df[col] = df[col].astype(str).str.replace('[^0-9.-]', '', regex=True).replace('', np.nan).astype(float, errors='ignore')"
+    description: "Clean numeric columns"
+  - action: custom
+    expression: "df['confidence_score'] = df.apply(lambda row: calculate_confidence_score(row['description'], row['amount'], row['balance']), axis=1)"
+    description: "Calculate confidence scores"
+  - action: custom
+    expression: "df = df[df['confidence_score'] >= 0.5]"  # Minimum confidence threshold
+    description: "Filter out very low confidence records"
+
+correction_rules:
+  - pattern: "O"
+    likely_replacement: "0"
+    context: "\\d[O]\\d|[O]\\d|\\d[O]"
+  - pattern: "l"
+    likely_replacement: "1"
+    context: "\\d[l]\\d|[l]\\d|\\d[l]"
+  - pattern: "S"
+    likely_replacement: "5"
+    context: "\\d[S]\\d|[S]\\d|\\d[S]"
+  - pattern: "Z"
+    likely_replacement: "2"
+    context: "\\d[Z]\\d|[Z]\\d|\\d[Z]"
+  - pattern: "I"
+    likely_replacement: "1"
+    context: "\\d[I]\\d|[I]\\d|\\d[I]"
+
+functions:
+  - name: clean_and_convert_date
+    code: |
+      def clean_and_convert_date(date_str):
+          if pd.isna(date_str):
+              return None
+          # Remove extra characters often found in OCR text
+          date_str = re.sub(r'[^0-9a-zA-Z\s/\\.,:-]', '', str(date_str))
+          # Try various date formats
+          for fmt in ["%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y", "%Y-%m-%d", "%d-%b-%Y", "%d %b %Y", "%b %d, %Y"]:
+              try:
+                  return datetime.strptime(date_str, fmt)
+              except:
+                  pass
+          # Try pandas' flexible parsing
+          try:
+              return pd.to_datetime(date_str)
+          except:
+              return None
+  
+  - name: extract_amount
+    code: |
+      def extract_amount(amount_str):
+          if pd.isna(amount_str):
+              return None
+          # Extract numbers and decimal point, handling OCR artifacts
+          clean = re.sub(r'[^0-9.-]', '', str(amount_str))
+          if not clean:
+              return None
+          try:
+              return float(clean)
+          except:
+              return None
+  
+  - name: extract_cheque_number
+    code: |
+      def extract_cheque_number(text):
+          if pd.isna(text):
+              return None
+          # Find check numbers - usually 6+ digits
+          match = re.search(r'(\d{6,})', str(text))
+          if match:
+              return match.group(1)
+          return None
+  
+  - name: extract_transaction_type
+    code: |
+      def extract_transaction_type(desc, debit, credit):
+          if pd.isna(desc):
+              return "UNKNOWN"
+          desc = str(desc).upper()
+          common_types = {
+              "ATM": ["ATM", "WITHDRAWAL", "CASH"],
+              "SALARY": ["SALARY", "WAGES", "PAYROLL"],
+              "TRANSFER": ["TRANSFER", "XFER", "TFR"],
+              "PAYMENT": ["PAYMENT", "PMT", "BILL PAY"],
+              "DEPOSIT": ["DEPOSIT", "DEP"],
+              "INTEREST": ["INTEREST", "INT"],
+              "FEE": ["FEE", "CHARGE", "SERVICE"],
+              "TAX": ["TAX", "TDS", "GST"]
+          }
+          for type_name, keywords in common_types.items():
+              if any(keyword in desc for keyword in keywords):
+                  return type_name
+          # Fallback based on debit/credit
+          if pd.notna(debit) and float(debit) > 0:
+              return "DEBIT"
+          if pd.notna(credit) and float(credit) > 0:
+              return "CREDIT"
+          return "OTHER"
+  
+  - name: apply_ocr_corrections
+    code: |
+      def apply_ocr_corrections(text):
+          if pd.isna(text):
+              return text
+          text = str(text)
+          # Common OCR corrections
+          corrections = {
+              r'\bO(\d+)': r'0\1',      # 'O' followed by digits -> '0'
+              r'(\d+)O': r'\10',        # digits followed by 'O' -> '0'
+              r'\bl(\d+)': r'1\1',      # 'l' followed by digits -> '1'
+              r'(\d+)l': r'\11',        # digits followed by 'l' -> '1'
+              r'\bS(\d+)': r'5\1',      # 'S' followed by digits -> '5'
+              r'(\d+)S': r'\15',        # digits followed by 'S' -> '5'
+              r'\bI(\d+)': r'1\1',      # 'I' followed by digits -> '1'
+              r'(\d+)I': r'\11',        # digits followed by 'I' -> '1'
+              r'[\'"`]': '',            # Remove quotes (often OCR artifacts)
+              r'\s+': ' ',              # Normalize spaces
+          }
+          for pattern, replacement in corrections.items():
+              text = re.sub(pattern, replacement, text)
+          return text.strip()
+  
+  - name: calculate_confidence_score
+    code: |
+      def calculate_confidence_score(description, amount, balance):
+          score = 1.0
+          if pd.isna(description) or str(description).strip() == '':
+              score -= 0.3
+          elif len(str(description)) < 5:
+              score -= 0.1
+          
+          if pd.isna(amount):
+              score -= 0.3
+          
+          if pd.isna(balance):
+              score -= 0.2
+          
+          # Penalize suspicious patterns (strings of repeated characters)
+          if re.search(r'(.)\1{3,}', str(description)):
+              score -= 0.1
+          
+          # Penalize unlikely amounts (excessively large)
+          if pd.notna(amount) and abs(float(amount)) > 10000000:
+              score -= 0.2
+          
+          return max(0.0, min(1.0, score))
+  
+  - name: balance_continuity_check
+    code: |
+      def balance_continuity_check(df, tolerance=1.0):
+          if 'balance' not in df.columns or 'amount' not in df.columns:
+              return False
+          
+          df = df.sort_values('date')
+          df['expected_balance'] = df['balance'].shift(1) + df['amount']
+          df['balance_diff'] = (df['balance'] - df['expected_balance']).abs()
+          
+          # Check if differences are within tolerance
+          continuity_issues = df[df['balance_diff'] > tolerance].shape[0]
+          return continuity_issues / df.shape[0] < 0.2  # Allow up to 20% issues
+
+audit:
+  enabled: true
+  track_fields:
+    - date
+    - description
+    - debit
+    - credit
+    - balance
+    - confidence_score
+  track_transformations: true
+  track_validation_failures: true
+  create_snapshots: true
+  include_raw_data: true
+  include_ocr_metadata: true

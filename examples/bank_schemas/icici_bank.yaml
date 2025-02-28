@@ -1,0 +1,94 @@
+name: ICICI Bank
+id: icici_bank
+version: 1.0.0
+description: Schema configuration for ICICI Bank statements
+
+source:
+  supported_formats:
+    - csv
+    - excel
+  encoding: utf-8
+  csv_options:
+    delimiter: ','
+    header_row: 0
+  excel_options:
+    header_row: 0
+  detection_rules:
+    column_patterns:
+      - Value Date
+      - Withdrawal Amount
+      - Deposit Amount
+      - Narration
+      - Closing Balance
+
+field_mappings:
+  date:
+    source: Value Date
+    type: date
+    required: true
+    format: '%d/%m/%Y'
+  debit:
+    source: Withdrawal Amount
+    type: decimal
+    required: false
+    transform: clean_amount
+  credit:
+    source: Deposit Amount
+    type: decimal
+    required: false
+    transform: clean_amount
+  narration:
+    source: Narration
+    type: string
+    required: true
+    transform: clean_description
+  balance:
+    source: Closing Balance
+    type: decimal
+    required: true
+    transform: clean_amount
+  cheque_no:
+    source: Cheque Number
+    type: string
+    required: false
+
+derived_fields:
+  transaction_id:
+    transform: "lambda df, idx: f\"ICICI_{idx}\""
+    type: string
+  payment_method:
+    transform: extract_payment_method
+    source: narration
+    type: string
+  reference_id:
+    transform: extract_reference_id
+    source: narration
+    type: string
+  is_bill_payment:
+    transform: "lambda x: 'BILL PAYMENT' in str(x).upper()"
+    source: narration
+    type: boolean
+
+validation_rules:
+  - rule: not_null
+    field: date
+    error_message: Transaction date cannot be null
+  - rule: not_null
+    field: narration
+    error_message: Transaction description cannot be null
+  - rule: custom
+    expression: "~(df['debit'].isna() & df['credit'].isna()).all()"
+    error_message: Either debit or credit amount must be provided
+  - rule: custom
+    expression: "df['balance'].notna().all()"
+    error_message: Balance cannot be null
+
+audit:
+  enabled: true
+  track_fields:
+    - date
+    - narration
+    - debit
+    - credit
+    - balance
+  track_transformations: true
