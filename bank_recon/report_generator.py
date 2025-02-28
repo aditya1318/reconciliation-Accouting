@@ -271,10 +271,20 @@ class ReconciliationReportGenerator:
         # Get comprehensive summary with all transactions
         summary = reconciler.get_reconciliation_summary(include_transactions=True)
         
-        # Convert pandas timestamps to strings
+        # Convert special types to native Python types
         def convert_datetimes(obj):
-            if isinstance(obj, pd.Timestamp) or isinstance(obj, datetime):
+            if isinstance(obj, (pd.Timestamp, datetime)):
                 return obj.isoformat()
+            elif isinstance(obj, (np.int64, np.int32, np.int16, np.int8)):
+                return int(obj)
+            elif isinstance(obj, (np.float64, np.float32, np.float16)):
+                return float(obj)
+            elif isinstance(obj, np.bool_):
+                return bool(obj)
+            elif isinstance(obj, pd.Series):
+                return obj.to_list()
+            elif isinstance(obj, pd.DataFrame):
+                return obj.to_dict(orient='records')
             return obj
         
         # Write JSON file
