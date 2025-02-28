@@ -1,0 +1,56 @@
+# Configuration for different Indian bank statement formats
+
+hdfc:
+  date_format: "%d/%m/%Y"
+  columns:
+    date: "Date"
+    value_date: "Value Date"
+    narration: "Narration"
+    ref_no: "Chq/Ref Number"
+    debit: "Withdrawal Amt"
+    credit: "Deposit Amt"
+    balance: "Closing Balance"
+
+sbi:
+  date_format: "%d %b %Y"
+  columns:
+    date: "Txn Date"
+    value_date: "Value Date"
+    narration: "Description"
+    ref_no: "Ref No./Cheque No."
+    debit: "Debit"
+    credit: "Credit"
+    balance: "Balance"
+
+icici:
+  date_format: "%d-%m-%Y"
+  columns:
+    date: "Transaction Date"
+    value_date: "Value Date"
+    narration: "Transaction Remarks"
+    ref_no: "Cheque Number"
+    debit: "Withdrawal Amount (INR)"
+    credit: "Deposit Amount (INR)"
+    balance: "Balance (INR)"
+
+axis:
+  date_format: "%d-%m-%Y"
+  columns:
+    date: "Tran Date"
+    value_date: "Val Date"
+    narration: "Particulars"
+    ref_no: "Chq/Ref No"
+    debit: "Debit"
+    credit: "Credit"
+    balance: "Balance"
+
+yes_bank:
+  date_format: "%d-%m-%Y"
+  columns:
+    date: "Transaction Date"
+    value_date: "Value Date"
+    narration: "Transaction Remarks"
+    ref_no: "Instrument ID"
+    debit: "Withdrawal (Dr)"
+    credit: "Deposit (Cr)"
+    balance: "Balance"
